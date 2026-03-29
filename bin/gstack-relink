@@ -46,13 +46,22 @@ for skill_dir in "$INSTALL_DIR"/*/; do
   [ -f "$skill_dir/SKILL.md" ] || continue
 
   if [ "$PREFIX" = "true" ]; then
-    # Create gstack-* symlink, remove flat if exists
-    ln -sfn "$INSTALL_DIR/$skill" "$SKILLS_DIR/gstack-$skill"
-    [ -L "$SKILLS_DIR/$skill" ] && rm -f "$SKILLS_DIR/$skill"
+    # Don't double-prefix directories already named gstack-*
+    case "$skill" in
+      gstack-*) link_name="$skill" ;;
+      *)        link_name="gstack-$skill" ;;
+    esac
+    ln -sfn "$INSTALL_DIR/$skill" "$SKILLS_DIR/$link_name"
+    # Remove old flat symlink if it exists (and isn't the same as the new link)
+    [ "$link_name" != "$skill" ] && [ -L "$SKILLS_DIR/$skill" ] && rm -f "$SKILLS_DIR/$skill"
   else
     # Create flat symlink, remove gstack-* if exists
     ln -sfn "$INSTALL_DIR/$skill" "$SKILLS_DIR/$skill"
-    [ -L "$SKILLS_DIR/gstack-$skill" ] && rm -f "$SKILLS_DIR/gstack-$skill"
+    # Don't remove gstack-* dirs that are their real name (e.g., gstack-upgrade)
+    case "$skill" in
+      gstack-*) ;; # Already the real name, no old prefixed link to clean
+      *)        [ -L "$SKILLS_DIR/gstack-$skill" ] && rm -f "$SKILLS_DIR/gstack-$skill" ;;
+    esac
   fi
   SKILL_COUNT=$((SKILL_COUNT + 1))
 done
