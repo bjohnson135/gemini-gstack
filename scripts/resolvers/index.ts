@@ -3,7 +3,7 @@
  * Each resolver takes a TemplateContext and returns the replacement string.
  */
 
-import type { TemplateContext } from './types';
+import type { TemplateContext, ResolverFn } from './types';
 
 // Domain modules
 import { generatePreamble } from './preamble';
@@ -15,8 +15,9 @@ import { generateReviewDashboard, generatePlanFileReviewReport, generateSpecRevi
 import { generateSlugEval, generateSlugSetup, generateBaseBranchDetect, generateDeployBootstrap, generateQAMethodology, generateCoAuthorTrailer } from './utility';
 import { generateLearningsSearch, generateLearningsLog } from './learnings';
 import { generateConfidenceCalibration } from './confidence';
+import { generateInvokeSkill } from './composition';
 
-export const RESOLVERS: Record<string, (ctx: TemplateContext) => string> = {
+export const RESOLVERS: Record<string, ResolverFn> = {
   SLUG_EVAL: generateSlugEval,
   SLUG_SETUP: generateSlugSetup,
   COMMAND_REFERENCE: generateCommandReference,
@@ -53,4 +54,5 @@ export const RESOLVERS: Record<string, (ctx: TemplateContext) => string> = {
   LEARNINGS_SEARCH: generateLearningsSearch,
   LEARNINGS_LOG: generateLearningsLog,
   CONFIDENCE_CALIBRATION: generateConfidenceCalibration,
+  INVOKE_SKILL: generateInvokeSkill,
 };

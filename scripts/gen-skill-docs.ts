@@ -340,15 +340,18 @@ function processTemplate(tmplPath: string, host: Host = 'claude'): { outputPath:
 
   const ctx: TemplateContext = { skillName, tmplPath, benefitsFrom, host, paths: HOST_PATHS[host], preambleTier };
 
-  // Replace placeholders
-  let content = tmplContent.replace(/\{\{(\w+)\}\}/g, (match, name) => {
-    const resolver = RESOLVERS[name];
-    if (!resolver) throw new Error(`Unknown placeholder {{${name}}} in ${relTmplPath}`);
-    return resolver(ctx);
+  // Replace placeholders (supports parameterized: {{NAME:arg1:arg2}})
+  let content = tmplContent.replace(/\{\{(\w+(?::[^}]+)?)\}\}/g, (match, fullKey) => {
+    const parts = fullKey.split(':');
+    const resolverName = parts[0];
+    const args = parts.slice(1);
+    const resolver = RESOLVERS[resolverName];
+    if (!resolver) throw new Error(`Unknown placeholder {{${resolverName}}} in ${relTmplPath}`);
+    return args.length > 0 ? resolver(ctx, args) : resolver(ctx);
   });
 
   // Check for any remaining unresolved placeholders
-  const remaining = content.match(/\{\{(\w+)\}\}/g);
+  const remaining = content.match(/\{\{(\w+(?::[^}]+)?)\}\}/g);
   if (remaining) {
     throw new Error(`Unresolved placeholders in ${relTmplPath}: ${remaining.join(', ')}`);
   }
