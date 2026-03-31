@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.14.3.0] - 2026-03-30 — Ship Idempotency + Skill Prefix Fix
+## [0.14.4.0] - 2026-03-31 — Ship Idempotency + Skill Prefix Fix
 
 Re-running `/ship` after a failed push or PR creation no longer double-bumps your version or duplicates your CHANGELOG. And if you use `--prefix` mode, your skill names actually work now.
 
@@ -9,6 +9,8 @@ Re-running `/ship` after a failed push or PR creation no longer double-bumps you
 - **`/ship` is now idempotent (#649).** If push succeeds but PR creation fails (API outage, rate limit), re-running `/ship` detects the already-bumped VERSION, skips the push if already up to date, and updates the existing PR body instead of creating a duplicate. The CHANGELOG step was already idempotent by design ("replace with unified entry"), so no guard needed there.
 - **Skill prefix actually patches `name:` in SKILL.md (#620, #578).** `./setup --prefix` and `gstack-relink` now patch the `name:` field in each skill's SKILL.md frontmatter to match the prefix setting. Previously, symlinks were prefixed but Claude Code read the unprefixed `name:` field and ignored the prefix entirely. Edge cases handled: `gstack-upgrade` not double-prefixed, root `gstack` skill never prefixed, prefix removal restores original names.
 - **`gen-skill-docs` warns when prefix patches need re-applying.** After regenerating SKILL.md files, if `skill_prefix: true` is set in config, a warning reminds you to run `gstack-relink`.
+- **PR idempotency checks open state.** The PR guard now verifies the existing PR is `OPEN`, so closed PRs don't block new PR creation.
+- **`--no-prefix` ordering bug.** `gstack-patch-names` now runs before `link_claude_skill_dirs` so symlink names reflect the correct patched values.
 
 ### Added
 
@@ -20,6 +22,22 @@ Re-running `/ship` after a failed push or PR creation no longer double-bumps you
 - 2 tests for gen-skill-docs prefix warning
 - 1 E2E test for ship idempotency (periodic tier)
 - Updated `setupMockInstall` to write SKILL.md with proper frontmatter
+
+## [0.14.3.0] - 2026-03-31 — Always-On Adversarial Review + Scope Drift + Plan Mode Design Tools
+
+Every code review now runs adversarial analysis from both Claude and Codex, regardless of diff size. A 5-line auth change gets the same cross-model scrutiny as a 500-line feature. The old "skip adversarial for small diffs" heuristic is gone... diff size was never a good proxy for risk.
+
+### Added
+
+- **Always-on adversarial review.** Every `/review` and `/ship` run now dispatches both a Claude adversarial subagent and a Codex adversarial challenge. No more tier-based skipping. The Codex structured review (formal P1 pass/fail gate) still runs on large diffs (200+ lines) where the formal gate adds value.
+- **Scope drift detection in `/ship`.** Before shipping, `/ship` now checks whether you built what you said you'd build, nothing more, nothing less. Catches scope creep ("while I was in there..." changes) and missing requirements. Results appear in the PR body.
+- **Plan Mode Safe Operations.** Browse screenshots, design mockups, Codex outside voices, and writing to `~/.gstack/` are now explicitly allowed in plan mode. Design-related skills (`/design-consultation`, `/design-shotgun`, `/design-html`, `/plan-design-review`) can generate visual artifacts during planning without fighting plan mode restrictions.
+
+### Changed
+
+- **Adversarial opt-out split.** The legacy `codex_reviews=disabled` config now only gates Codex passes. Claude adversarial subagent always runs since it's free and fast. Previously the kill switch disabled everything.
+- **Cross-model tension format.** Outside voice disagreements now include `RECOMMENDATION` and `Completeness` scores, matching the standard AskUserQuestion format used everywhere else in gstack.
+- **Scope drift is now a shared resolver.** Extracted from `/review` into `generateScopeDrift()` so both `/review` and `/ship` use the same logic. DRY.
 
 ## [0.14.2.0] - 2026-03-30 — Sidebar CSS Inspector + Per-Tab Agents
 
