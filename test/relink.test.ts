@@ -325,6 +325,66 @@ describe('gstack-relink (#578)', () => {
   });
 });
 
+describe('upgrade migrations', () => {
+  const MIGRATIONS_DIR = path.join(ROOT, 'gstack-upgrade', 'migrations');
+
+  test('migrations directory exists', () => {
+    expect(fs.existsSync(MIGRATIONS_DIR)).toBe(true);
+  });
+
+  test('all migration scripts are executable and parse without syntax errors', () => {
+    const scripts = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sh'));
+    expect(scripts.length).toBeGreaterThan(0);
+    for (const script of scripts) {
+      const fullPath = path.join(MIGRATIONS_DIR, script);
+      // Must be executable
+      const stat = fs.statSync(fullPath);
+      expect(stat.mode & 0o111).toBeGreaterThan(0);
+      // Must parse without syntax errors (bash -n is a syntax check, doesn't execute)
+      const result = execSync(`bash -n "${fullPath}" 2>&1`, { encoding: 'utf-8', timeout: 5000 });
+      // bash -n outputs nothing on success
+    }
+  });
+
+  test('migration filenames follow v{VERSION}.sh pattern', () => {
+    const scripts = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sh'));
+    for (const script of scripts) {
+      expect(script).toMatch(/^v\d+\.\d+\.\d+\.\d+\.sh$/);
+    }
+  });
+
+  test('v0.15.2.0 migration runs gstack-relink', () => {
+    const content = fs.readFileSync(path.join(MIGRATIONS_DIR, 'v0.15.2.0.sh'), 'utf-8');
+    expect(content).toContain('gstack-relink');
+  });
+
+  test('v0.15.2.0 migration fixes stale directory symlinks', () => {
+    setupMockInstall(['qa', 'ship', 'review']);
+    // Simulate old state: directory symlinks (pre-v0.15.2.0 pattern)
+    fs.symlinkSync(path.join(installDir, 'qa'), path.join(skillsDir, 'qa'));
+    fs.symlinkSync(path.join(installDir, 'ship'), path.join(skillsDir, 'ship'));
+    fs.symlinkSync(path.join(installDir, 'review'), path.join(skillsDir, 'review'));
+    // Set no-prefix mode
+    run(`${path.join(installDir, 'bin', 'gstack-config')} set skill_prefix false`);
+    // Verify old state: symlinks
+    expect(fs.lstatSync(path.join(skillsDir, 'qa')).isSymbolicLink()).toBe(true);
+
+    // Run the migration (it calls gstack-relink internally)
+    run(`bash ${path.join(MIGRATIONS_DIR, 'v0.15.2.0.sh')}`, {
+      GSTACK_INSTALL_DIR: installDir,
+      GSTACK_SKILLS_DIR: skillsDir,
+    });
+
+    // After migration: real directories with SKILL.md symlinks
+    for (const skill of ['qa', 'ship', 'review']) {
+      const skillPath = path.join(skillsDir, skill);
+      expect(fs.lstatSync(skillPath).isSymbolicLink()).toBe(false);
+      expect(fs.lstatSync(skillPath).isDirectory()).toBe(true);
+      expect(fs.lstatSync(path.join(skillPath, 'SKILL.md')).isSymbolicLink()).toBe(true);
+    }
+  });
+});
+
 describe('gstack-patch-names (#620/#578)', () => {
   // Helper to read name: from SKILL.md frontmatter
   function readSkillName(skillDir: string): string | null {
