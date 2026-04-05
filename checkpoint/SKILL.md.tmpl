@@ -150,12 +150,50 @@ files_modified:
 ### Notes
 
 {Gotchas, blocked items, open questions, things tried that didn't work}
+
+### Resume Prompt
+
+{Write the exact prompt that would resume this session in a fresh Claude Code
+instance. Include: skill to load, branch to checkout, specific files to read,
+what the next step is, and any context the new session needs. This field is
+consumed by OpenClaw/Wintermute for zero-context-reconstruction handoff.
+Cap at ~4000 characters. Example:
+"Load gstack. Continue work on branch garrytan/auth-flow in ~/git/baku.
+Two commits landed. The refresh token rotation test at test/auth/refresh.test.ts:47
+is failing on the expiry edge case. Read that test file first."}
 ```
 
 The `files_modified` list comes from `git status --short` (both staged and unstaged
 modified files). Use relative paths from the repo root.
 
-After writing, confirm to the user:
+After writing, also write a handoff file for cross-runtime context transfer:
+
+```bash
+HANDOFF_DIR="$HOME/.gstack/handoff"
+mkdir -p "$HANDOFF_DIR"
+```
+
+Write to `{HANDOFF_DIR}/{TIMESTAMP}-{title-slug}.md` with this format:
+
+```markdown
+---
+from: gstack
+to: wintermute
+project: {project name from SLUG}
+branch: {current branch name}
+timestamp: {ISO-8601 timestamp}
+resume_prompt: |
+  {the resume prompt from the checkpoint, verbatim}
+---
+
+{The Summary, Remaining Work, and Notes sections from the checkpoint, verbatim}
+```
+
+This handoff file is consumed by OpenClaw (Wintermute) for cross-runtime session
+continuation. When the user says "continue the work" to Wintermute, it reads the
+`resume_prompt` and passes it directly to a new Claude Code session.
+
+After writing both files, confirm to the user:
 
 ```
 CHECKPOINT SAVED
@@ -163,6 +201,7 @@ CHECKPOINT SAVED
 Title:    {title}
 Branch:   {branch}
 File:     {path to checkpoint file}
+Handoff:  {path to handoff file}
 Modified: {N} files
 Duration: {duration or "unknown"}
 ════════════════════════════════════════
