@@ -1,6 +1,6 @@
 # gstack-lite Planning Discipline
 
-Injected by Wintermute into spawned Claude Code sessions. Append to existing CLAUDE.md.
+Injected by the orchestrator into spawned Claude Code sessions. Append to existing CLAUDE.md.
 
 ## Planning Discipline
 1. Read every file you will modify. Understand existing patterns first.

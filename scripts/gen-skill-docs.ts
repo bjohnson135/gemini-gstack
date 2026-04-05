@@ -551,7 +551,7 @@ for (const currentHost of hostsToRun) {
 
       const gstackLite = `# gstack-lite Planning Discipline
 
-Injected by Wintermute into spawned Claude Code sessions. Append to existing CLAUDE.md.
+Injected by the orchestrator into spawned Claude Code sessions. Append to existing CLAUDE.md.
 
 ## Planning Discipline
 1. Read every file you will modify. Understand existing patterns first.
@@ -567,7 +567,7 @@ Injected by Wintermute into spawned Claude Code sessions. Append to existing CLA
 
       const gstackFull = `# gstack-full Pipeline
 
-Injected by Wintermute for complete feature builds. Append to existing CLAUDE.md.
+Injected by the orchestrator for complete feature builds. Append to existing CLAUDE.md.
 
 ## Full Pipeline
 1. Read CLAUDE.md and understand the project context.

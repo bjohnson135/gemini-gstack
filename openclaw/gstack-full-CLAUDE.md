@@ -1,6 +1,6 @@
 # gstack-full Pipeline
 
-Injected by Wintermute for complete feature builds. Append to existing CLAUDE.md.
+Injected by the orchestrator for complete feature builds. Append to existing CLAUDE.md.
 
 ## Full Pipeline
 1. Read CLAUDE.md and understand the project context.
