@@ -1556,8 +1556,14 @@ async function start() {
         });
       }
 
-      // GET /inspector/events — SSE for inspector state changes
+      // GET /inspector/events — SSE for inspector state changes (auth required)
       if (url.pathname === '/inspector/events' && req.method === 'GET') {
+        const streamToken = url.searchParams.get('token');
+        if (!validateAuth(req) && streamToken !== AUTH_TOKEN) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401, headers: { 'Content-Type': 'application/json' },
+          });
+        }
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
           start(controller) {
