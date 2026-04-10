@@ -6,7 +6,6 @@
  */
 
 import type { HostConfig } from '../scripts/host-config';
-import claude from './claude';
 import codex from './codex';
 import factory from './factory';
 import kiro from './kiro';
@@ -17,7 +16,7 @@ import openclaw from './openclaw';
 import gemini from './gemini';
 
 /** All registered host configs. Add new hosts here. */
-export const ALL_HOST_CONFIGS: HostConfig[] = [claude, codex, factory, kiro, opencode, slate, cursor, openclaw, gemini];
+export const ALL_HOST_CONFIGS: HostConfig[] = [codex, factory, kiro, opencode, slate, cursor, openclaw, gemini];
 
 /** Map from host name to config. */
 export const HOST_CONFIG_MAP: Record<string, HostConfig> = Object.fromEntries(
@@ -56,12 +55,12 @@ export function resolveHostArg(arg: string): string {
 }
 
 /**
- * Get hosts that are NOT the primary host (Claude).
+ * Get hosts that are NOT the primary host (Gemini).
  * These are the hosts that need generated skill docs.
  */
 export function getExternalHosts(): HostConfig[] {
-  return ALL_HOST_CONFIGS.filter(c => c.name !== 'claude');
+  return ALL_HOST_CONFIGS.filter(c => c.name !== 'gemini');
 }
 
 // Re-export individual configs for direct import
-export { claude, codex, factory, kiro, opencode, slate, cursor, openclaw, gemini };
+export { codex, factory, kiro, opencode, slate, cursor, openclaw, gemini };
