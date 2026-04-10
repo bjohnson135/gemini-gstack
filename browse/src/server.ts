@@ -175,7 +175,7 @@ interface ChatEntry {
 interface SidebarSession {
   id: string;
   name: string;
-  claudeSessionId: string | null;
+  agentSessionId: string | null;
   worktreePath: string | null;
   createdAt: string;
   lastActiveAt: string;
@@ -225,7 +225,7 @@ function getChatBuffer(tabId?: number): ChatEntry[] {
 // Legacy single-buffer alias for session load/clear
 let chatBuffer: ChatEntry[] = [];
 
-// Find the browse binary for the claude subprocess system prompt
+// Find the browse binary for the agent subprocess system prompt
 function findBrowseBin(): string {
   const candidates = [
     path.resolve(__dirname, '..', 'dist', 'browse'),
@@ -240,36 +240,27 @@ function findBrowseBin(): string {
 
 const BROWSE_BIN = findBrowseBin();
 
-function findClaudeBin(): string | null {
-  const home = process.env.HOME || '';
-  const candidates = [
-    // Conductor app bundled binary (not a symlink — works reliably)
-    path.join(home, 'Library', 'Application Support', 'com.conductor.app', 'bin', 'claude'),
-    // Direct versioned binary (not a symlink)
-    ...(() => {
-      try {
-        const versionsDir = path.join(home, '.local', 'share', 'claude', 'versions');
-        const entries = fs.readdirSync(versionsDir).filter(e => /^\d/.test(e)).sort().reverse();
-        return entries.map(e => path.join(versionsDir, e));
-      } catch { return []; }
-    })(),
-    // Standard install (symlink — resolve it)
-    path.join(home, '.local', 'bin', 'claude'),
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-  ];
-  // Also check if 'claude' is in current PATH
+function findAgentBin(): string | null {
+  // Look for gemini CLI in PATH
   try {
-    const proc = Bun.spawnSync(['which', 'claude'], { stdout: 'pipe', stderr: 'pipe', timeout: 2000 });
+    const proc = Bun.spawnSync(['which', 'gemini'], { stdout: 'pipe', stderr: 'pipe', timeout: 2000 });
     if (proc.exitCode === 0) {
       const p = proc.stdout.toString().trim();
-      if (p) candidates.unshift(p);
+      if (p) {
+        try { return fs.realpathSync(p); } catch { return p; }
+      }
     }
   } catch {}
+
+  const home = process.env.HOME || '';
+  const candidates = [
+    path.join(home, '.local', 'bin', 'gemini'),
+    '/usr/local/bin/gemini',
+    '/opt/homebrew/bin/gemini',
+  ];
   for (const c of candidates) {
     try {
       if (!fs.existsSync(c)) continue;
-      // Resolve symlinks — posix_spawn can fail on symlinks in compiled bun binaries
       return fs.realpathSync(c);
     } catch {}
   }
@@ -281,7 +272,7 @@ function shortenPath(str: string): string {
     .replace(new RegExp(BROWSE_BIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '$B')
     .replace(/\/Users\/[^/]+/g, '~')
     .replace(/\/conductor\/workspaces\/[^/]+\/[^/]+/g, '')
-    .replace(/\.claude\/skills\/gstack\//g, '')
+    .replace(/\.gemini\/extensions\/gstack\//g, '')
     .replace(/browse\/dist\/browse/g, '$B');
 }
 
@@ -331,10 +322,10 @@ function loadSession(): SidebarSession | null {
       console.log(`[browse] Stale worktree path: ${session.worktreePath} — clearing`);
       session.worktreePath = null;
     }
-    // Clear stale claude session ID — can't resume across server restarts
-    if (session.claudeSessionId) {
-      console.log(`[browse] Clearing stale claude session: ${session.claudeSessionId}`);
-      session.claudeSessionId = null;
+    // Clear stale agent session ID — can't resume across server restarts
+    if (session.agentSessionId) {
+      console.log(`[browse] Clearing stale agent session: ${session.agentSessionId}`);
+      session.agentSessionId = null;
     }
     // Load chat history
     const chatFile = path.join(SESSIONS_DIR, session.id, 'chat.jsonl');
@@ -434,7 +425,7 @@ function createSession(): SidebarSession {
   const session: SidebarSession = {
     id,
     name: 'Chrome sidebar',
-    claudeSessionId: null,
+    agentSessionId: null,
     worktreePath,
     createdAt: new Date().toISOString(),
     lastActiveAt: new Date().toISOString(),
@@ -479,14 +470,14 @@ function listSessions(): Array<SidebarSession & { chatLines: number }> {
 
 function processAgentEvent(event: any): void {
   if (event.type === 'system') {
-    if (event.claudeSessionId && sidebarSession && !sidebarSession.claudeSessionId) {
-      sidebarSession.claudeSessionId = event.claudeSessionId;
+    if (event.agentSessionId && sidebarSession && !sidebarSession.agentSessionId) {
+      sidebarSession.agentSessionId = event.agentSessionId;
       saveSession();
     }
     return;
   }
 
-  // The sidebar-agent.ts pre-processes Claude stream events into simplified
+  // The sidebar-agent.ts pre-processes agent stream events into simplified
   // types: tool_use, text, text_delta, result, agent_start, agent_done,
   // agent_error. Handle these directly.
   const ts = new Date().toISOString();
@@ -519,7 +510,7 @@ function processAgentEvent(event: any): void {
   // agent_start and agent_done are handled by the caller in the endpoint handler
 }
 
-function spawnClaude(userMessage: string, extensionUrl?: string | null, forTabId?: number | null): void {
+function spawnAgent(userMessage: string, extensionUrl?: string | null, forTabId?: number | null): void {
   // Lock agent to the tab the user is currently on
   agentTabId = forTabId ?? browserManager?.getActiveTabId?.() ?? null;
   const tabState = getTabAgent(agentTabId ?? 0);
@@ -585,7 +576,7 @@ function spawnClaude(userMessage: string, extensionUrl?: string | null, forTabId
   // Compiled bun binaries CANNOT spawn external processes (posix_spawn
   // fails with ENOENT on everything, including /bin/bash). Instead,
   // write the command to a queue file that the sidebar-agent process
-  // (running as non-compiled bun) picks up and spawns claude.
+  // (running as non-compiled bun) picks up and spawns gemini.
   const agentQueue = process.env.SIDEBAR_QUEUE_PATH || path.join(process.env.HOME || '/tmp', '.gstack', 'sidebar-agent-queue.jsonl');
   const gstackDir = path.dirname(agentQueue);
   const entry = JSON.stringify({
@@ -595,7 +586,7 @@ function spawnClaude(userMessage: string, extensionUrl?: string | null, forTabId
     args,
     stateFile: config.stateFile,
     cwd: (sidebarSession as any)?.worktreePath || process.cwd(),
-    sessionId: sidebarSession?.claudeSessionId || null,
+    sessionId: sidebarSession?.agentSessionId || null,
     pageUrl: pageUrl,
     tabId: agentTabId,
   });
@@ -610,7 +601,7 @@ function spawnClaude(userMessage: string, extensionUrl?: string | null, forTabId
     currentMessage = null;
     return;
   }
-  // The sidebar-agent.ts process polls this file and spawns claude.
+  // The sidebar-agent.ts process polls this file and spawns gemini.
   // It POST events back via /sidebar-event which processAgentEvent handles.
   // Agent status transitions happen when we receive agent_done/agent_error events.
 }
@@ -738,7 +729,7 @@ const idleCheckInterval = setInterval(() => {
 }, 60_000);
 
 // ─── Parent-Process Watchdog ────────────────────────────────────────
-// When the spawning CLI process (e.g. a Claude Code session) exits, this
+// When the spawning CLI process (e.g. a Gemini CLI session) exits, this
 // server can become an orphan — keeping chrome-headless-shell alive and
 // causing console-window flicker on Windows. Poll the parent PID every 15s
 // and self-terminate if it is gone.
@@ -1147,7 +1138,7 @@ async function shutdown() {
   console.log('[browse] Shutting down...');
   // Kill the sidebar-agent daemon process (spawned by cli.ts, detached).
   // Without this, the agent keeps polling a dead server and spawns confused
-  // claude processes that auto-start headless browsers.
+  // agent processes that auto-start headless browsers.
   try {
     const { spawnSync } = require('child_process');
     spawnSync('pkill', ['-f', 'sidebar-agent\\.ts'], { stdio: 'ignore', timeout: 3000 });
@@ -1306,7 +1297,7 @@ async function start() {
           `<!DOCTYPE html><html><head><title>GStack Browser</title>
           <style>body{background:#111;color:#fff;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}
           .msg{text-align:center;opacity:.7;}.gold{color:#f5a623;font-size:2em;margin-bottom:12px;}</style></head>
-          <body><div class="msg"><div class="gold">◈</div><p>GStack Browser ready.</p><p style="font-size:.85em">Waiting for commands from Claude Code.</p></div></body></html>`,
+          <body><div class="msg"><div class="gold">◈</div><p>GStack Browser ready.</p><p style="font-size:.85em">Waiting for commands from Gemini CLI.</p></div></body></html>`,
           { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
         );
       }
@@ -1790,7 +1781,7 @@ async function start() {
         // Per-tab agent: each tab can run its own agent concurrently
         const tabState = getTabAgent(msgTabId);
         if (tabState.status === 'idle') {
-          spawnClaude(msg, sanitizedExtUrl, msgTabId);
+          spawnAgent(msg, sanitizedExtUrl, msgTabId);
           return new Response(JSON.stringify({ ok: true, processing: true }), {
             status: 200, headers: { 'Content-Type': 'application/json' },
           });
@@ -1832,7 +1823,7 @@ async function start() {
         // Process next in queue
         if (messageQueue.length > 0) {
           const next = messageQueue.shift()!;
-          spawnClaude(next.message, next.extensionUrl);
+          spawnAgent(next.message, next.extensionUrl);
         }
         return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
@@ -1926,7 +1917,7 @@ async function start() {
           // Process next queued message for THIS tab
           if (tabState.queue.length > 0) {
             const next = tabState.queue.shift()!;
-            spawnClaude(next.message, next.extensionUrl, eventTabId);
+            spawnAgent(next.message, next.extensionUrl, eventTabId);
           }
           agentTabId = null; // Release tab lock
           // Legacy: update global status (idle if no tab has an active agent)
@@ -1935,9 +1926,9 @@ async function start() {
             agentStatus = 'idle';
           }
         }
-        // Capture claude session ID for --resume
-        if (body.claudeSessionId && sidebarSession && !sidebarSession.claudeSessionId) {
-          sidebarSession.claudeSessionId = body.claudeSessionId;
+        // Capture agent session ID for --resume
+        if (body.agentSessionId && sidebarSession && !sidebarSession.agentSessionId) {
+          sidebarSession.agentSessionId = body.agentSessionId;
           saveSession();
         }
         return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });

@@ -1,10 +1,10 @@
 /**
- * Sidebar Agent — polls agent-queue from server, spawns claude -p for each
+ * Sidebar Agent — polls agent-queue from server, spawns gemini for each
  * message, streams live events back to the server via /sidebar-agent/event.
  *
  * This runs as a NON-COMPILED bun process because compiled bun binaries
  * cannot posix_spawn external executables. The server writes to the queue
- * file, this process reads it and spawns claude.
+ * file, this process reads it and spawns gemini.
  *
  * Usage: BROWSE_BIN=/path/to/browse bun run browse/src/sidebar-agent.ts
  */
@@ -61,7 +61,7 @@ let lastLine = 0;
 let authToken: string | null = null;
 // Per-tab processing — each tab can run its own agent concurrently
 const processingTabs = new Set<number>();
-// Active claude subprocesses — keyed by tabId for targeted kill
+// Active agent subprocesses — keyed by tabId for targeted kill
 const activeProcs = new Map<number, ReturnType<typeof spawn>>();
 let activeProc: ReturnType<typeof spawn> | null = null;
 // Kill-file timestamp last seen — avoids double-kill on same write
@@ -144,14 +144,14 @@ async function sendEvent(event: Record<string, any>, tabId?: number): Promise<vo
   }
 }
 
-// ─── Claude subprocess ──────────────────────────────────────────
+// ─── Agent subprocess ───────────────────────────────────────────
 
 function shorten(str: string): string {
   return str
     .replace(new RegExp(B.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '$B')
     .replace(/\/Users\/[^/]+/g, '~')
     .replace(/\/conductor\/workspaces\/[^/]+\/[^/]+/g, '')
-    .replace(/\.claude\/skills\/gstack\//g, '')
+    .replace(/\.gemini\/extensions\/gstack\//g, '')
     .replace(/browse\/dist\/browse/g, '$B');
 }
 
@@ -211,8 +211,8 @@ function describeToolCall(tool: string, input: any): string {
   }
 
   if (tool === 'Read' && input.file_path) {
-    // Skip Claude's internal tool-result file reads — they're plumbing, not user-facing
-    if (input.file_path.includes('/tool-results/') || input.file_path.includes('/.claude/projects/')) return '';
+    // Skip internal tool-result file reads — they're plumbing, not user-facing
+    if (input.file_path.includes('/tool-results/')) return '';
     return `Reading ${shorten(input.file_path)}`;
   }
   if (tool === 'Edit' && input.file_path) return `Editing ${shorten(input.file_path)}`;
@@ -229,8 +229,8 @@ function summarizeToolInput(tool: string, input: any): string {
 
 async function handleStreamEvent(event: any, tabId?: number): Promise<void> {
   if (event.type === 'system' && event.session_id) {
-    // Relay claude session ID for --resume support
-    await sendEvent({ type: 'system', claudeSessionId: event.session_id }, tabId);
+    // Relay agent session ID for --resume support
+    await sendEvent({ type: 'system', agentSessionId: event.session_id }, tabId);
   }
 
   if (event.type === 'assistant' && event.message?.content) {
@@ -266,7 +266,7 @@ async function handleStreamEvent(event: any, tabId?: number): Promise<void> {
   }
 }
 
-async function askClaude(queueEntry: QueueEntry): Promise<void> {
+async function askAgent(queueEntry: QueueEntry): Promise<void> {
   const { prompt, args, stateFile, cwd, tabId } = queueEntry;
   const tid = tabId ?? 0;
 
@@ -278,7 +278,7 @@ async function askClaude(queueEntry: QueueEntry): Promise<void> {
     // Fall back to defaults only if queue entry has no args (backward compat).
     // Write doesn't expand attack surface beyond what Bash already provides.
     // The security boundary is the localhost-only message path, not the tool allowlist.
-    let claudeArgs = args || ['-p', prompt, '--output-format', 'stream-json', '--verbose',
+    let agentArgs = args || ['-p', prompt, '--output-format', 'stream-json', '--verbose',
       '--allowedTools', 'Bash,Read,Glob,Grep,Write'];
 
     // Validate cwd exists — queue may reference a stale worktree
@@ -292,7 +292,7 @@ async function askClaude(queueEntry: QueueEntry): Promise<void> {
     const cancelFile = cancelFileForTab(tid);
     try { fs.unlinkSync(cancelFile); } catch {}
 
-    const proc = spawn('claude', claudeArgs, {
+    const proc = spawn('gemini', agentArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd: effectiveCwd,
       env: {
@@ -320,7 +320,7 @@ async function askClaude(queueEntry: QueueEntry): Promise<void> {
     const cancelCheck = setInterval(() => {
       try {
         if (fs.existsSync(cancelFile)) {
-          console.log(`[sidebar-agent] Cancel signal received for tab ${tid} — killing claude subprocess`);
+          console.log(`[sidebar-agent] Cancel signal received for tab ${tid} — killing agent subprocess`);
           try { proc.kill('SIGTERM'); } catch {}
           setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, 3000);
           fs.unlinkSync(cancelFile);
@@ -446,7 +446,7 @@ async function poll() {
     // Write to inbox so workspace agent can pick it up
     writeToInbox(entry.message || entry.prompt, entry.pageUrl, entry.sessionId);
     // Fire and forget — each tab's agent runs concurrently
-    askClaude(entry).catch((err) => {
+    askAgent(entry).catch((err) => {
       console.error(`[sidebar-agent] Error on tab ${tid}:`, err);
       sendEvent({ type: 'agent_error', error: String(err) }, tid);
     });
