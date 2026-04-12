@@ -29,6 +29,35 @@ const windsurf: HostConfig = {
   ],
 
   toolRewrites: {
+    // Core tool name rewrites (Claude → Gemini/Windsurf tool names)
+    'use the Bash tool': 'use the run_shell_command tool',
+    'use the Write tool': 'use the write_file tool',
+    'use the Read tool': 'use the read_file tool',
+    'use the Edit tool': 'use the replace tool',
+    'use the Grep tool': 'use the grep_search tool',
+    'use the Glob tool': 'use the glob tool',
+    'the Bash tool': 'the run_shell_command tool',
+    'the Write tool': 'the write_file tool',
+    'the Read tool': 'the read_file tool',
+    'the Edit tool': 'the replace tool',
+    'the Grep tool': 'the grep_search tool',
+    'the Glob tool': 'the glob tool',
+    "Bash tool's": "run_shell_command tool's",
+    'Edit tool': 'replace tool',
+    'Write tool': 'write_file tool',
+    'Edit/Write tool': 'replace/write_file tool',
+    'Edit and Write tools': 'replace and write_file tools',
+    'Read, Bash, Glob, Grep': 'read_file, run_shell_command, glob, grep_search',
+    'WebSearch': 'google_web_search',
+    'TodoWrite': 'write_todos',
+
+    // Config file rewrites (CLAUDE.md → GEMINI.md)
+    'CLAUDE.md': 'GEMINI.md',
+
+    // Plan mode tools
+    'call ExitPlanMode': 'call exit_plan_mode',
+    'ExitPlanMode': 'exit_plan_mode',
+
     // Agent/subagent (Cascade does not support spawning subagents)
     'use the Agent tool': 'perform the following steps inline (Cascade does not support subagents — adopt the described persona and do the work directly)',
     'Dispatch via the Agent tool': 'Perform inline (adopt the described persona and do the work directly)',
