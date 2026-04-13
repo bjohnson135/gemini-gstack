@@ -1,6 +1,6 @@
 /**
  * Design-to-Code Prompt Generator.
- * Extracts implementation instructions from an approved mockup via GPT-4o vision.
+ * Extracts implementation instructions from an approved mockup via Gemini vision.
  * Produces a structured prompt the agent can use to implement the design.
  */
 
@@ -37,23 +37,18 @@ export async function generateDesignToCodePrompt(
       ? `\n\nExisting DESIGN.md (use these as constraints):\n${designConstraints}`
       : "";
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [{
-          role: "user",
-          content: [
+        contents: [{
+          parts: [
             {
-              type: "image_url",
-              image_url: { url: `data:image/png;base64,${imageData}` },
+              inlineData: { mimeType: "image/png", data: imageData },
             },
             {
-              type: "text",
               text: `Analyze this approved UI mockup and generate a structured implementation prompt. Return valid JSON only:
 
 {
@@ -68,8 +63,10 @@ Be specific about every visual detail: exact hex colors, font sizes in px, spaci
             },
           ],
         }],
-        max_tokens: 1000,
-        response_format: { type: "json_object" },
+        generationConfig: {
+          maxOutputTokens: 1000,
+          responseMimeType: "application/json",
+        },
       }),
       signal: controller.signal,
     });
@@ -80,7 +77,7 @@ Be specific about every visual detail: exact hex colors, font sizes in px, spaci
     }
 
     const data = await response.json() as any;
-    const content = data.choices?.[0]?.message?.content?.trim() || "";
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
     return JSON.parse(content) as DesignToCodeResult;
   } finally {
     clearTimeout(timeout);

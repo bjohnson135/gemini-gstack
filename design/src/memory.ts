@@ -1,7 +1,7 @@
 /**
  * Design Memory — extract visual language from approved mockups into DESIGN.md.
  *
- * After a mockup is approved, uses GPT-4o vision to extract:
+ * After a mockup is approved, uses Gemini vision to extract:
  * - Color palette (hex values)
  * - Typography (font families, sizes, weights)
  * - Spacing patterns (padding, margins, gaps)
@@ -34,23 +34,18 @@ export async function extractDesignLanguage(imagePath: string): Promise<Extracte
   const timeout = setTimeout(() => controller.abort(), 60_000);
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [{
-          role: "user",
-          content: [
+        contents: [{
+          parts: [
             {
-              type: "image_url",
-              image_url: { url: `data:image/png;base64,${imageData}` },
+              inlineData: { mimeType: "image/png", data: imageData },
             },
             {
-              type: "text",
               text: `Analyze this UI mockup and extract the design language. Return valid JSON only, no markdown:
 
 {
@@ -65,8 +60,10 @@ Extract real values from what you see. Be specific about hex colors and font siz
             },
           ],
         }],
-        max_tokens: 800,
-        response_format: { type: "json_object" },
+        generationConfig: {
+          maxOutputTokens: 800,
+          responseMimeType: "application/json",
+        },
       }),
       signal: controller.signal,
     });
@@ -77,7 +74,7 @@ Extract real values from what you see. Be specific about hex colors and font siz
     }
 
     const data = await response.json() as any;
-    const content = data.choices?.[0]?.message?.content?.trim() || "";
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
     return JSON.parse(content) as ExtractedDesign;
   } catch (err: any) {
     console.error(`Design extraction error: ${err.message}`);

@@ -17,7 +17,7 @@ export interface EvolveOptions {
 
 /**
  * Generate an evolved mockup from an existing screenshot + brief.
- * Sends the screenshot as context to GPT-4o with image generation,
+ * Sends the screenshot as context to Gemini with image generation,
  * asking it to produce a new version incorporating the brief's changes.
  */
 export async function evolve(options: EvolveOptions): Promise<void> {
@@ -26,11 +26,6 @@ export async function evolve(options: EvolveOptions): Promise<void> {
 
   console.error(`Evolving ${options.screenshot} with: "${options.brief}"`);
   const startTime = Date.now();
-
-  // Use the Responses API with both a text prompt referencing the screenshot
-  // and the image_generation tool to produce the evolved version.
-  // Since we can't send reference images directly to image_generation,
-  // we describe the current state in detail first via vision, then generate.
 
   // Step 1: Analyze current screenshot
   const analysis = await analyzeScreenshot(apiKey, screenshotData);
@@ -55,41 +50,35 @@ export async function evolve(options: EvolveOptions): Promise<void> {
   const timeout = setTimeout(() => controller.abort(), 120_000);
 
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
-        input: evolvedPrompt,
-        tools: [{ type: "image_generation", size: "1536x1024", quality: "high" }],
+        contents: [{ parts: [{ text: evolvedPrompt }] }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+        },
       }),
       signal: controller.signal,
     });
 
     if (!response.ok) {
       const error = await response.text();
-      if (response.status === 403 && error.includes("organization must be verified")) {
-        throw new Error(
-          "OpenAI organization verification required.\n"
-          + "Go to https://platform.openai.com/settings/organization to verify.\n"
-          + "After verification, wait up to 15 minutes for access to propagate.",
-        );
-      }
       throw new Error(`API error (${response.status}): ${error.slice(0, 300)}`);
     }
 
     const data = await response.json() as any;
-    const imageItem = data.output?.find((item: any) => item.type === "image_generation_call");
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    const imagePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith("image/"));
 
-    if (!imageItem?.result) {
+    if (!imagePart?.inlineData?.data) {
       throw new Error("No image data in response");
     }
 
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    const imageBuffer = Buffer.from(imageItem.result, "base64");
+    const imageBuffer = Buffer.from(imagePart.inlineData.data, "base64");
     fs.writeFileSync(options.output, imageBuffer);
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -113,28 +102,23 @@ async function analyzeScreenshot(apiKey: string, imageBase64: string): Promise<s
   const timeout = setTimeout(() => controller.abort(), 30_000);
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [{
-          role: "user",
-          content: [
+        contents: [{
+          parts: [
             {
-              type: "image_url",
-              image_url: { url: `data:image/png;base64,${imageBase64}` },
+              inlineData: { mimeType: "image/png", data: imageBase64 },
             },
             {
-              type: "text",
               text: `Describe this UI in detail for re-creation. Include: overall layout structure, color scheme (hex values), typography (sizes, weights), specific text content visible, spacing between elements, alignment patterns, and any decorative elements. Be precise enough that someone could recreate this UI from your description alone. 200 words max.`,
             },
           ],
         }],
-        max_tokens: 400,
+        generationConfig: { maxOutputTokens: 400 },
       }),
       signal: controller.signal,
     });
@@ -144,7 +128,7 @@ async function analyzeScreenshot(apiKey: string, imageBase64: string): Promise<s
     }
 
     const data = await response.json() as any;
-    return data.choices?.[0]?.message?.content?.trim() || "Unable to analyze screenshot";
+    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Unable to analyze screenshot";
   } finally {
     clearTimeout(timeout);
   }

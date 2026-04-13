@@ -1,5 +1,14 @@
 # gstack development
 
+## Fork guardrails
+
+This repo is a fork of `garrytan/gstack`. **NEVER** open a PR against the upstream
+repo. All PRs must target `bjohnson135/gemini-gstack`.
+
+- `gh repo set-default` is configured to use `bjohnson135/gemini-gstack`
+- Always use `--repo bjohnson135/gemini-gstack` with `gh pr create` as a safety net
+- If `gh pr create` prompts to choose a repo, always pick the fork, never upstream
+
 ## Commands
 
 ```bash

@@ -37,7 +37,7 @@ async function generateVariant(
   prompt: string,
   outputPath: string,
   size: string,
-  quality: string,
+  _quality: string,
 ): Promise<{ path: string; success: boolean; error?: string }> {
   const maxRetries = 3;
   let lastError = "";
@@ -54,16 +54,16 @@ async function generateVariant(
     const timeout = setTimeout(() => controller.abort(), 120_000);
 
     try {
-      const response = await fetch("https://api.openai.com/v1/responses", {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o",
-          input: prompt,
-          tools: [{ type: "image_generation", size, quality }],
+          contents: [{ parts: [{ text: `${prompt}\n\nImage size: ${size} pixels.` }] }],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"],
+          },
         }),
         signal: controller.signal,
       });
@@ -77,20 +77,18 @@ async function generateVariant(
 
       if (!response.ok) {
         const error = await response.text();
-        if (response.status === 403 && error.includes("organization must be verified")) {
-          return { path: outputPath, success: false, error: "OpenAI organization verification required. Go to https://platform.openai.com/settings/organization to verify." };
-        }
         return { path: outputPath, success: false, error: `API error (${response.status}): ${error.slice(0, 200)}` };
       }
 
       const data = await response.json() as any;
-      const imageItem = data.output?.find((item: any) => item.type === "image_generation_call");
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      const imagePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith("image/"));
 
-      if (!imageItem?.result) {
+      if (!imagePart?.inlineData?.data) {
         return { path: outputPath, success: false, error: "No image data in response" };
       }
 
-      fs.writeFileSync(outputPath, Buffer.from(imageItem.result, "base64"));
+      fs.writeFileSync(outputPath, Buffer.from(imagePart.inlineData.data, "base64"));
       return { path: outputPath, success: true };
     } catch (err: any) {
       clearTimeout(timeout);

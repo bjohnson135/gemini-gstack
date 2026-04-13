@@ -1,5 +1,5 @@
 /**
- * Generate UI mockups via OpenAI Responses API with image_generation tool.
+ * Generate UI mockups via Gemini API with native image generation.
  */
 
 import fs from "fs";
@@ -22,69 +22,54 @@ export interface GenerateOptions {
 export interface GenerateResult {
   outputPath: string;
   sessionFile: string;
-  responseId: string;
   checkResult?: { pass: boolean; issues: string };
 }
 
 /**
- * Call OpenAI Responses API with image_generation tool.
- * Returns the response ID and base64 image data.
+ * Call Gemini API with native image generation.
+ * Returns the base64 image data.
  */
 async function callImageGeneration(
   apiKey: string,
   prompt: string,
   size: string,
-  quality: string,
-): Promise<{ responseId: string; imageData: string }> {
+  _quality: string,
+): Promise<{ imageData: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);
 
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
-        input: prompt,
-        tools: [{
-          type: "image_generation",
-          size,
-          quality,
-        }],
+        contents: [{ parts: [{ text: `${prompt}\n\nImage size: ${size} pixels.` }] }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+        },
       }),
       signal: controller.signal,
     });
 
     if (!response.ok) {
       const error = await response.text();
-      if (response.status === 403 && error.includes("organization must be verified")) {
-        throw new Error(
-          "OpenAI organization verification required.\n"
-          + "Go to https://platform.openai.com/settings/organization to verify.\n"
-          + "After verification, wait up to 15 minutes for access to propagate.",
-        );
-      }
       throw new Error(`API error (${response.status}): ${error.slice(0, 200)}`);
     }
 
     const data = await response.json() as any;
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    const imagePart = parts.find((p: any) => p.inlineData?.mimeType?.startsWith("image/"));
 
-    const imageItem = data.output?.find((item: any) =>
-      item.type === "image_generation_call"
-    );
-
-    if (!imageItem?.result) {
+    if (!imagePart?.inlineData?.data) {
       throw new Error(
-        `No image data in response. Output types: ${data.output?.map((o: any) => o.type).join(", ") || "none"}`
+        `No image data in response. Part types: ${parts.map((p: any) => p.text ? "text" : p.inlineData?.mimeType || "unknown").join(", ") || "none"}`
       );
     }
 
     return {
-      responseId: data.id,
-      imageData: imageItem.result,
+      imageData: imagePart.inlineData.data,
     };
   } finally {
     clearTimeout(timeout);
@@ -115,7 +100,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
 
     // Generate the image
     const startTime = Date.now();
-    const { responseId, imageData } = await callImageGeneration(apiKey, prompt, size, quality);
+    const { imageData } = await callImageGeneration(apiKey, prompt, size, quality);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
     // Write to disk
@@ -125,14 +110,13 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
     fs.writeFileSync(options.output, imageBuffer);
 
     // Create session
-    const session = createSession(responseId, prompt, options.output);
+    const session = createSession(prompt, options.output);
 
     console.error(`Generated (${elapsed}s, ${(imageBuffer.length / 1024).toFixed(0)}KB) → ${options.output}`);
 
     lastResult = {
       outputPath: options.output,
       sessionFile: sessionPath(session.id),
-      responseId,
     };
 
     // Quality check if requested
