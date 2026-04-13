@@ -1,6 +1,6 @@
 /**
  * Vision-based quality gate for generated mockups.
- * Uses GPT-4o vision to verify text readability, layout completeness, and visual coherence.
+ * Uses Gemini vision to verify text readability, layout completeness, and visual coherence.
  */
 
 import fs from "fs";
@@ -22,23 +22,18 @@ export async function checkMockup(imagePath: string, brief: string): Promise<Che
   const timeout = setTimeout(() => controller.abort(), 60_000);
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [{
-          role: "user",
-          content: [
+        contents: [{
+          parts: [
             {
-              type: "image_url",
-              image_url: { url: `data:image/png;base64,${imageData}` },
+              inlineData: { mimeType: "image/png", data: imageData },
             },
             {
-              type: "text",
               text: [
                 "You are a UI quality checker. Evaluate this mockup against the design brief.",
                 "",
@@ -56,41 +51,41 @@ export async function checkMockup(imagePath: string, brief: string): Promise<Che
             },
           ],
         }],
-        max_tokens: 200,
+        generationConfig: { maxOutputTokens: 200 },
       }),
       signal: controller.signal,
     });
 
     if (!response.ok) {
       const error = await response.text();
-      if (response.status === 403 && error.includes("organization must be verified")) {
-        console.error("OpenAI organization verification required. Go to https://platform.openai.com/settings/organization to verify.");
-        return { pass: true, issues: "OpenAI org not verified — vision check skipped" };
-      }
       // Non-blocking: if vision check fails, default to PASS with warning
       console.error(`Vision check API error (${response.status}): ${error}`);
       return { pass: true, issues: "Vision check unavailable — skipped" };
     }
 
     const data = await response.json() as any;
-    const content = data.choices?.[0]?.message?.content?.trim() || "";
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 
     if (content.startsWith("PASS")) {
       return { pass: true, issues: "" };
     }
 
-    // Extract issues after "FAIL:"
-    const issues = content.replace(/^FAIL:\s*/i, "").trim();
-    return { pass: false, issues: issues || content };
+    return { pass: false, issues: content.replace(/^FAIL:\s*/, "") };
   } finally {
     clearTimeout(timeout);
   }
 }
 
 /**
- * Standalone check command: check an existing image against a brief.
+ * CLI entry point for check command.
  */
 export async function checkCommand(imagePath: string, brief: string): Promise<void> {
+  if (!imagePath || !brief) {
+    console.error("Usage: $D check --image <path> --brief <text>");
+    process.exit(1);
+  }
+
   const result = await checkMockup(imagePath, brief);
   console.log(JSON.stringify(result, null, 2));
+  if (!result.pass) process.exit(1);
 }

@@ -1,5 +1,5 @@
 /**
- * Visual diff between two mockups using GPT-4o vision.
+ * Visual diff between two mockups using Gemini vision.
  * Identifies what changed between design iterations or between
  * an approved mockup and the live implementation.
  */
@@ -28,19 +28,15 @@ export async function diffMockups(
   const timeout = setTimeout(() => controller.abort(), 60_000);
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [{
-          role: "user",
-          content: [
+        contents: [{
+          parts: [
             {
-              type: "text",
               text: `Compare these two UI images. The first is the BEFORE (or design intent), the second is the AFTER (or actual implementation). Return valid JSON only:
 
 {
@@ -57,17 +53,17 @@ matchScore: 100 = identical, 0 = completely different.
 Focus on layout, typography, colors, spacing, and element presence/absence. Ignore rendering differences (anti-aliasing, sub-pixel).`,
             },
             {
-              type: "image_url",
-              image_url: { url: `data:image/png;base64,${beforeData}` },
+              inlineData: { mimeType: "image/png", data: beforeData },
             },
             {
-              type: "image_url",
-              image_url: { url: `data:image/png;base64,${afterData}` },
+              inlineData: { mimeType: "image/png", data: afterData },
             },
           ],
         }],
-        max_tokens: 600,
-        response_format: { type: "json_object" },
+        generationConfig: {
+          maxOutputTokens: 600,
+          responseMimeType: "application/json",
+        },
       }),
       signal: controller.signal,
     });
@@ -79,7 +75,7 @@ Focus on layout, typography, colors, spacing, and element presence/absence. Igno
     }
 
     const data = await response.json() as any;
-    const content = data.choices?.[0]?.message?.content?.trim() || "";
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
     return JSON.parse(content) as DiffResult;
   } finally {
     clearTimeout(timeout);
