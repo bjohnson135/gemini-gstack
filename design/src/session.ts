@@ -8,7 +8,6 @@ import path from "path";
 
 export interface DesignSession {
   id: string;
-  lastResponseId: string;
   originalBrief: string;
   feedbackHistory: string[];
   outputPaths: string[];
@@ -34,14 +33,12 @@ export function sessionPath(sessionId: string): string {
  * Create a new session after initial generation.
  */
 export function createSession(
-  responseId: string,
   brief: string,
   outputPath: string,
 ): DesignSession {
   const id = createSessionId();
   const session: DesignSession = {
     id,
-    lastResponseId: responseId,
     originalBrief: brief,
     feedbackHistory: [],
     outputPaths: [outputPath],
@@ -66,11 +63,9 @@ export function readSession(sessionFilePath: string): DesignSession {
  */
 export function updateSession(
   session: DesignSession,
-  responseId: string,
   feedback: string,
   outputPath: string,
 ): void {
-  session.lastResponseId = responseId;
   session.feedbackHistory.push(feedback);
   session.outputPaths.push(outputPath);
   session.updatedAt = new Date().toISOString();
